@@ -1,12 +1,27 @@
 import express, { Request, Response } from "express";
 import multer from "multer";
-import { uploadToCloudinary } from "../services/imageProcessingService";
+import { uploadImageToCloudinary } from "../services/imageProcessingService";
 
 const router = express.Router();
-const upload = multer(); // Default multer setup (can be customized)
+const upload = multer(); 
+
+router.post("/test-image", upload.single("image"), async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "File is missing" });
+      return;
+    }
+    const uploadedImage = await uploadImageToCloudinary(req.file.buffer, req.file.originalname);
+    res.json({ success: true, data: uploadedImage });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error });
+  }
+});
+
+
+/*
 
 router.post('/test-image', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
-  // Check if file is missing
   if (!req.file) {
     res.status(404).json({ error: "File is missing" });
     return;
@@ -25,5 +40,6 @@ router.post('/test-image', upload.single('file'), async (req: Request, res: Resp
     res.status(500).json({ error: "Failed to upload image", details: error });
   }
 });
+*/
 
 export default router;
