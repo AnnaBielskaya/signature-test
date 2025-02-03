@@ -1,0 +1,78 @@
+import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+
+const CLOUDINARY_CLOUD_NAME = "dnqx9z6kf";
+const CLOUDINARY_API_KEY = "321157237975644";
+const CLOUDINARY_API_SECRET = "wEnpLNffHXDHS74tfr01NyTMLtQ";
+const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+
+/**
+ * Generates SHA-1 signature for Cloudinary API
+ */
+async function generateSignature(timestamp: number): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`timestamp=${timestamp}${CLOUDINARY_API_SECRET}`);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Uploads an image to Cloudinary
+ */
+async function uploadImageToCloudinary(imageData: Uint8Array, fileName: string): Promise<any> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = await generateSignature(timestamp);
+
+  const formData = new FormData();
+  formData.append("file", new Blob([imageData], { type: "image/jpeg" }), fileName);
+  formData.append("api_key", CLOUDINARY_API_KEY);
+  formData.append("timestamp", timestamp.toString());
+  formData.append("signature", signature);
+
+  const response = await fetch(UPLOAD_URL, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cloudinary Upload Failed: ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Edge function entry point
+ */
+serve(async (req) => {
+  try {
+    if (req.method !== "POST") {
+      return new Response("Only POST requests are allowed", { status: 405 });
+    }
+
+    // Read the image from request
+    const formData = await req.formData();
+    const imageFile = formData.get("file") as File;
+
+    if (!imageFile) {
+      return new Response(JSON.stringify({ error: "No image provided" }), { status: 400 });
+    }
+
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const imageData = new Uint8Array(arrayBuffer);
+
+    // Upload to Cloudinary
+    const cloudinaryResponse = await uploadImageToCloudinary(imageData, imageFile.name);
+
+    return new Response(JSON.stringify({ url: cloudinaryResponse.secure_url }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  } catch (error) {
+    console.error("Error:", error);
+    return new Response(JSON.stringify({ error: error }), { status: 500 });
+  }
+});
